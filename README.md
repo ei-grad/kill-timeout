@@ -1,10 +1,16 @@
-Python library to limit the function execution time
-===================================================
+Limit the function execution time
+=================================
+
+This module provides a decorator which runs the function in a separate
+multiprocessing.Process and sends SIGKILL after the specified timeout if the
+function didn't complete.
 
 Install
 -------
 
+```bash
 pip install kill-timeout
+```
 
 Usage
 -----
