@@ -5,6 +5,11 @@ This module provides a decorator which runs the function in a separate
 multiprocessing.Process and sends SIGKILL after the specified timeout if the
 function didn't complete.
 
+Requirements
+------------
+
+* Python 3.7+ (needed for multiprocessing.Process.kill)
+
 Install
 -------
 
