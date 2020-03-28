@@ -37,6 +37,12 @@ def kill_timeout(seconds):
             process.start()
             process.join(seconds)
             if process.is_alive():
+                # NOTE: killing the process without getting its return code via
+                # .join() would cause the zombie process to stay until the next
+                # multiprocessing.Process() run, it is acceptable, since it
+                # shouldn't end up with many zombie processes, and the
+                # alternatives like creating the daemon threads to catch the
+                # zombies don't look like a good fit
                 process.kill()
             if id(key) in results:
                 result = results.pop(id(key))
