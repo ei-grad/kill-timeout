@@ -4,7 +4,12 @@ import multiprocessing
 from tblib.decorators import return_error, Error
 
 
-class TimeoutError(Exception):
+class TimeoutError(TimeoutError):
+    """Custom TimeoutError
+
+    To distinguish from TimeoutError's raised by functions wrapped in
+    kill_timeout decorator.
+    """
     pass
 
 

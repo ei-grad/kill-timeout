@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from kill_timeout import kill_timeout, TimeoutError
+from kill_timeout import kill_timeout, TimeoutError as KillTimeoutError
 
 
 @kill_timeout(0.1)
@@ -17,6 +17,8 @@ def test_simple():
 
 
 def test_timeout():
+    with pytest.raises(KillTimeoutError):
+        f(0.2)
     with pytest.raises(TimeoutError):
         f(0.2)
 

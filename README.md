@@ -16,7 +16,7 @@ Usage
 -----
 
 ```python
-from kill_timeout import kill_timeout, TimeoutError
+from kill_timeout import kill_timeout
 
 
 limit_in_seconds = 5
