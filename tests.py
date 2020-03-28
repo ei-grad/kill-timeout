@@ -1,4 +1,5 @@
 from time import sleep
+import sys
 
 import pytest
 
@@ -18,3 +19,21 @@ def test_simple():
 def test_timeout():
     with pytest.raises(TimeoutError):
         f(0.2)
+
+
+@kill_timeout(0.5)
+def f2():
+    1 / 0
+
+
+def test_exception():
+    with pytest.raises(ZeroDivisionError):
+        f2()
+
+    try:
+        f2()
+    except ZeroDivisionError:
+        _, _, tb = sys.exc_info()
+        while tb.tb_next is not None:
+            tb = tb.tb_next
+        assert tb.tb_frame.f_code.co_name == 'f2'

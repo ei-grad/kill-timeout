@@ -1,6 +1,7 @@
 from functools import wraps
 import multiprocessing
-import sys
+
+from tblib.decorators import return_error, Error
 
 
 class TimeoutError(Exception):
@@ -18,13 +19,9 @@ def kill_timeout(seconds):
 
         manager = multiprocessing.Manager()
         results = manager.dict()
-        exceptions = manager.dict()
 
         def target(key, *args, **kwargs):
-            try:
-                results[key] = func(*args, **kwargs)
-            except Exception:
-                exceptions[key] = sys.exc_info()
+            results[key] = return_error(func)(*args, **kwargs)
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -42,9 +39,11 @@ def kill_timeout(seconds):
             if process.is_alive():
                 process.kill()
             if id(key) in results:
-                return results.pop(id(key))
-            elif id(key) in exceptions:
-                raise exceptions.pop(id(key))
+                result = results.pop(id(key))
+                if isinstance(result, Error):
+                    result.reraise()
+                else:
+                    return result
             else:
                 raise TimeoutError("function %s didn't complete in %s seconds" % (
                     func.__name__, seconds
