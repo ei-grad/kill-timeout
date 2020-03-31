@@ -9,6 +9,7 @@ Requirements
 ------------
 
 * Python 3.7+ (needed for multiprocessing.Process.kill)
+* tblib (to pass the traceback from separate process)
 
 Install
 -------
