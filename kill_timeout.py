@@ -3,6 +3,8 @@ import multiprocessing
 
 from tblib.decorators import return_error, Error
 
+_fork_ctx = multiprocessing.get_context("fork")
+
 
 class TimeoutError(TimeoutError):
     """Custom TimeoutError
@@ -13,52 +15,61 @@ class TimeoutError(TimeoutError):
     pass
 
 
+def _target(func, child_conn, args, kwargs):
+    """Top-level target function for the subprocess (must be picklable)."""
+    try:
+        child_conn.send(return_error(func)(*args, **kwargs))
+    finally:
+        child_conn.close()
+
+
 def kill_timeout(seconds):
     """Decorator to limit function execution time
 
     It runs the function in separate multiprocessing.Process and sends SIGKILL after
     the specified timeout if the function didn't complete.
+
+    Note: return values larger than the OS pipe buffer (~64KB on Linux) may cause
+    a false timeout because the child blocks on send() while the parent waits on
+    join(). Keep return values small or return None and communicate large results
+    through files or shared memory.
     """
 
     def decorator(func):
 
-        manager = multiprocessing.Manager()
-        results = manager.dict()
-
-        def target(key, *args, **kwargs):
-            results[key] = return_error(func)(*args, **kwargs)
-
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # key object would be uniq in the parent process, but it can't be
-            # used directly, because when it goes to manager the new object is
-            # created, so the `id(key)` should be used as the real key
-            key = object()
-            process = multiprocessing.Process(
-                target=target,
-                args=(id(key),) + args,
-                kwargs=kwargs,
+            parent_conn, child_conn = _fork_ctx.Pipe()
+            process = _fork_ctx.Process(
+                target=_target,
+                args=(func, child_conn, args, kwargs),
             )
             process.start()
+            child_conn.close()
             process.join(seconds)
             if process.is_alive():
-                # NOTE: killing the process without getting its return code via
-                # .join() would cause the zombie process to stay until the next
-                # multiprocessing.Process() run, it is acceptable, since it
-                # shouldn't end up with many zombie processes, and the
-                # alternatives like creating the daemon threads to catch the
-                # zombies don't look like a good fit
                 process.kill()
-            if id(key) in results:
-                result = results.pop(id(key))
+                process.join()
+                parent_conn.close()
+                raise TimeoutError(
+                    f"function {func.__name__} didn't complete in {seconds} seconds"
+                )
+            if parent_conn.poll():
+                result = parent_conn.recv()
+                parent_conn.close()
                 if isinstance(result, Error):
                     result.reraise()
-                else:
-                    return result
-            else:
-                raise TimeoutError("function %s didn't complete in %s seconds" % (
-                    func.__name__, seconds
-                ))
+                return result
+            parent_conn.close()
+            if process.exitcode and process.exitcode < 0:
+                raise ChildProcessError(
+                    f"function {func.__name__} was killed by signal "
+                    f"{-process.exitcode}"
+                )
+            raise ChildProcessError(
+                f"function {func.__name__} exited unexpectedly "
+                f"(exit code {process.exitcode})"
+            )
 
         return wrapper
 
