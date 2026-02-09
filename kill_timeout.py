@@ -22,43 +22,34 @@ def kill_timeout(seconds):
 
     def decorator(func):
 
-        manager = multiprocessing.Manager()
-        results = manager.dict()
-
-        def target(key, *args, **kwargs):
-            results[key] = return_error(func)(*args, **kwargs)
-
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # key object would be uniq in the parent process, but it can't be
-            # used directly, because when it goes to manager the new object is
-            # created, so the `id(key)` should be used as the real key
-            key = object()
-            process = multiprocessing.Process(
-                target=target,
-                args=(id(key),) + args,
-                kwargs=kwargs,
-            )
+            parent_conn, child_conn = multiprocessing.Pipe()
+
+            def target():
+                child_conn.send(return_error(func)(*args, **kwargs))
+                child_conn.close()
+
+            process = multiprocessing.Process(target=target)
             process.start()
             process.join(seconds)
             if process.is_alive():
-                # NOTE: killing the process without getting its return code via
-                # .join() would cause the zombie process to stay until the next
-                # multiprocessing.Process() run, it is acceptable, since it
-                # shouldn't end up with many zombie processes, and the
-                # alternatives like creating the daemon threads to catch the
-                # zombies don't look like a good fit
                 process.kill()
-            if id(key) in results:
-                result = results.pop(id(key))
+                process.join()
+                parent_conn.close()
+                raise TimeoutError(
+                    f"function {func.__name__} didn't complete in {seconds} seconds"
+                )
+            if parent_conn.poll():
+                result = parent_conn.recv()
+                parent_conn.close()
                 if isinstance(result, Error):
                     result.reraise()
-                else:
-                    return result
-            else:
-                raise TimeoutError("function %s didn't complete in %s seconds" % (
-                    func.__name__, seconds
-                ))
+                return result
+            parent_conn.close()
+            raise TimeoutError(
+                f"function {func.__name__} didn't complete in {seconds} seconds"
+            )
 
         return wrapper
 
